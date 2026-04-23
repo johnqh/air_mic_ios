@@ -14,11 +14,20 @@ final class AudioDeviceManager: ObservableObject {
     init() {
         observeRouteChanges()
         refreshDevices()
+        // Auto-select first input on launch
+        if selectedInput == nil, let first = availableInputs.first {
+            selectInput(first)
+        }
     }
 
     func refreshDevices() {
-        availableInputs = session.availableInputs ?? []
-        selectedInput = session.preferredInput ?? session.currentRoute.inputs.first
+        let inputs = session.availableInputs ?? []
+        // When session is inactive (e.g., after stop), availableInputs is empty.
+        // Preserve the previous state instead of clearing it.
+        if !inputs.isEmpty {
+            availableInputs = inputs
+            selectedInput = session.preferredInput ?? session.currentRoute.inputs.first ?? selectedInput
+        }
         updateOutputName()
     }
 
@@ -34,9 +43,8 @@ final class AudioDeviceManager: ObservableObject {
     private func updateOutputName() {
         if let output = session.currentRoute.outputs.first {
             currentOutputName = output.portName
-        } else {
-            currentOutputName = "No Output"
         }
+        // If no output (session inactive), keep the previous name
     }
 
     private func observeRouteChanges() {

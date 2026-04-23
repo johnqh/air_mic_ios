@@ -17,6 +17,7 @@ final class AudioEngineManager: ObservableObject {
 
     func start() throws {
         try configureSession()
+        updateOutputRoute()
         try startEngine()
         observeRouteChanges()
         isRunning = true
@@ -48,7 +49,7 @@ final class AudioEngineManager: ObservableObject {
         engine.connect(inputNode, to: mixer, format: format)
         mixer.outputVolume = gain
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 256, format: format) { [weak self] buffer, _ in
             self?.processAudioLevel(buffer: buffer)
         }
 
@@ -61,12 +62,11 @@ final class AudioEngineManager: ObservableObject {
         engine.reset()
     }
 
-    /// Restart the engine to pick up new audio formats after a route change
-    /// (e.g., switching to/from Bluetooth changes sample rate and channel count).
     private func restartEngine() {
         guard isRunning else { return }
         stopEngine()
         do {
+            updateOutputRoute()
             try startEngine()
         } catch {
             print("Failed to restart audio engine after route change: \(error)")
@@ -75,16 +75,32 @@ final class AudioEngineManager: ObservableObject {
         }
     }
 
-    // MARK: - Session configuration
+    // MARK: - Session & routing
 
     private func configureSession() throws {
         try session.setCategory(
             .playAndRecord,
-            mode: .default,
-            options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+            mode: .measurement, // No AGC/noise suppression — prevents interference
+            options: [.allowBluetooth, .allowBluetoothA2DP]
         )
-        try session.setPreferredIOBufferDuration(0.005)
+        try session.setPreferredIOBufferDuration(0.002)
         try session.setActive(true)
+    }
+
+    /// Route to loudspeaker when no external output is connected.
+    /// .measurement mode ignores .defaultToSpeaker, so we override manually.
+    private func updateOutputRoute() {
+        let hasExternalOutput = session.currentRoute.outputs.contains { port in
+            port.portType == .bluetoothA2DP || port.portType == .bluetoothHFP ||
+            port.portType == .bluetoothLE || port.portType == .headphones ||
+            port.portType == .airPlay
+        }
+
+        if hasExternalOutput {
+            try? session.overrideOutputAudioPort(.none)
+        } else {
+            try? session.overrideOutputAudioPort(.speaker)
+        }
     }
 
     // MARK: - Route change handling
@@ -101,8 +117,9 @@ final class AudioEngineManager: ObservableObject {
                 return
             }
 
+            // Don't handle .override — that's triggered by our own overrideOutputAudioPort calls
             switch changeReason {
-            case .newDeviceAvailable, .oldDeviceUnavailable, .override, .categoryChange:
+            case .newDeviceAvailable, .oldDeviceUnavailable, .categoryChange:
                 Task { @MainActor [weak self] in
                     self?.restartEngine()
                 }

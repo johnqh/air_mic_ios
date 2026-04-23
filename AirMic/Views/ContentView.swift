@@ -19,18 +19,18 @@ struct ContentView: View {
 
             // Input picker
             InputPickerView(deviceManager: deviceManager)
+                .disabled(engineManager.isRunning)
+                .opacity(engineManager.isRunning ? 0.5 : 1)
 
             // Output picker
             VStack(alignment: .leading, spacing: 8) {
                 Text("Output Device")
                     .font(.headline)
-                OutputRouteButton()
+                OutputRouteButton(outputName: deviceManager.currentOutputName, isDisabled: engineManager.isRunning)
                     .frame(height: 44)
-                Text(deviceManager.currentOutputName)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(engineManager.isRunning ? 0.5 : 1)
 
             Divider()
 
